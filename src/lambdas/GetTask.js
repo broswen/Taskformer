@@ -49,7 +49,8 @@ const updateTask = async event => {
     throw createError(500, "couldn't get task definition");
   }
 
-  const definition = response.Body.toString('utf-8');
+  // const definition = response.Body.toString('utf-8');
+  const definition = JSON.parse(response.Body.toString('utf-8'));
 
   return {
     statusCode: 200,
