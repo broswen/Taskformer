@@ -1,0 +1,200 @@
+service: taskformer
+frameworkVersion: '2'
+
+plugins: 
+  - serverless-step-functions
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+
+  timeout: 3
+  memorySize: 128
+
+  stage: dev
+  region: us-east-1
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+        - dynamodb:DeleteItem
+        - dynamodb:UpdateItem
+        - dynamodb:Query
+      Resource:
+        - !GetAtt TasksTable.Arn
+    - Effect: "Allow"
+      Action:
+        - s3:ListBucket
+        - s3:GetObject
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:PutObjectAcl
+      Resource:
+        - !GetAtt DefinitionBucket.Arn
+        - !Join [ '/', [!GetAtt DefinitionBucket.Arn, '*'] ]
+        - !GetAtt TasksBucket.Arn
+        - !Join [ '/', [!GetAtt TasksBucket.Arn, '*'] ]
+    - Effect: "Allow"
+      Action:
+        - states:StartExecution
+      Resource:
+        - !Ref GenerateTaskStateMachine
+
+
+  environment:
+    TASKS_TABLE: !Ref TasksTable
+    DEF_BUCKET: !Ref DefinitionBucket
+    TASK_BUCKET: !Ref TasksBucket
+
+functions:
+  CreateTask:
+    handler: src/lambdas/CreateTask.handler
+    events:
+     - http:
+        path: task
+        method: post
+  UpdateTask:
+    handler: src/lambdas/UpdateTask.handler
+    events:
+     - http:
+        path: task
+        method: put
+  GetTask:
+    handler: src/lambdas/GetTask.handler
+    events:
+     - http:
+        path: task/{taskId}
+        method: get
+        request:
+          parameters:
+            paths:
+              taskId: true
+  DeleteTask:
+    handler: src/lambdas/DeleteTask.handler
+    events:
+     - http:
+        path: task/{taskId}
+        method: delete
+        request:
+          parameters:
+            paths:
+              taskId: true
+  GenerateTask:
+    handler: src/lambdas/GenerateTask.handler
+    events:
+     - http:
+        path: generate
+        method: post
+    environment:
+      GEN_STFN: !Ref GenerateTaskStateMachine
+
+#functions for generate task state machine
+  ValidateTask: #check if task definition exists
+    handler: src/lambdas/steps/ValidateTask.handler
+    role: StepFunctionsRole
+  GenerateTaskCode: #generate code from definition json
+    handler: src/lambdas/steps/GenerateTaskCode.handler
+    role: StepFunctionsRole
+  UpdateTaskItem: #update task item with code s3 key and lastgenerated timestamp
+    handler: src/lambdas/steps/UpdateTaskItem.handler 
+    role: StepFunctionsRole
+
+stepFunctions:
+  stateMachines:
+    generateTaskStateMachine:
+      id: GenerateTaskStateMachine
+      name: taskformer-generatetask
+      definition:
+        StartAt: validateTask
+        States:
+          validateTask:
+            Type: Task
+            Resource: !GetAtt ValidateTask.Arn
+            Next: generateTaskCode
+          generateTaskCode:
+            Type: Task
+            Resource: !GetAtt GenerateTaskCode.Arn
+            Next: updateTaskItem
+          updateTaskItem:
+            Type: Task
+            Resource: !GetAtt UpdateTaskItem.Arn
+            End: true
+
+resources:
+  Resources:
+    TasksTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: PK2
+            AttributeType: S
+        GlobalSecondaryIndexes:
+          - IndexName: UserIdIndex
+            KeySchema:
+              - AttributeName: PK2
+                KeyType: HASH
+              - AttributeName: SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        TableName: taskformer-tasks-table
+        BillingMode: PAY_PER_REQUEST
+
+    TasksBucket:
+      Type: AWS::S3::Bucket
+      Properties: 
+        AccessControl: Private
+        BucketName: taskformer-tasks-bucket
+
+    DefinitionBucket:
+      Type: AWS::S3::Bucket
+      Properties: 
+        BucketName: taskformer-definition-bucket
+
+    StepFunctionsRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                - lambda.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: "root"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                  - Effect: "Allow"
+                    Action: s3:GetObject
+                    Resource: 
+                      - !GetAtt DefinitionBucket.Arn
+                      - !Join [ '/', [!GetAtt DefinitionBucket.Arn, '*'] ]
+                  - Effect: "Allow"
+                    Action: 
+                      - s3:PutObject
+                      - s3:PutObjectAcl
+                    Resource:
+                      - !GetAtt TasksBucket.Arn
+                      - !Join [ '/', [!GetAtt TasksBucket.Arn, '*'] ]
+                  - Effect: "Allow"
+                    Action: 
+                      - dynamodb:GetItem
+                      - dynamodb:UpdateItem
+                    Resource: !GetAtt TasksTable.Arn
