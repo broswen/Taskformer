@@ -1,0 +1,28 @@
+{
+  "name": "Example Task",
+  "steps": [
+    {
+      "type": "comment",
+      "value": "This is a comment and won't be evaluated"
+    },
+    {
+      "type": "variable",
+      "name": "x",
+      "value": 10
+    },
+    {
+      "type": "variable",
+      "name": "y",
+      "value": 3
+    },
+    {
+      "type": "calc",
+      "output": "z",
+      "expression": "x + y"
+    },
+    {
+      "type": "print",
+      "input": ["x", "'plus'", "y", "'equals'", "z"]
+    }
+  ]
+}

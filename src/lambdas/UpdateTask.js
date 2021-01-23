@@ -19,7 +19,7 @@ const inputSchema = {
       properties: {
         userId: { type: 'string', minLength: 3 },
         taskId: { type: 'string', minLength: 3 },
-        definition: { type: 'string' }
+        definition: { type: 'object' }
       },
       required: ['userId', 'taskId', 'definition']
     }
@@ -53,7 +53,7 @@ const updateTask = async event => {
   const params = {
     Bucket: process.env.DEF_BUCKET,
     Key: key,
-    Body: Buffer.from(definition)
+    Body: Buffer.from(JSON.stringify(definition))
   }
 
   try {

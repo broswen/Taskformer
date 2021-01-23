@@ -28,7 +28,7 @@ const handler = async event => {
 
   await DDB.update(params).promise();
 
-  return OK;
+  return "OK";
 };
 
 
